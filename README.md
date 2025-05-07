@@ -1,5 +1,5 @@
-Creating a Backend Server in Android Studio
-Yes, you can create a backend server directly within an Android application using Android Studio. This approach embeds a web server within your Android app, allowing the device to function as both a client and server.
+## Creating a Backend Server in Android Studio
+This approach embeds a web server within your Android app, allowing the device to function as both a client and server.
 Advantages of the Android Studio Approach
 
 Native integration with Android ecosystem
