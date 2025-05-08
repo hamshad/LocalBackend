@@ -40,14 +40,13 @@ public class AndroidBackendServer extends NanoHTTPD {
         item1.put("description", "First sample item");
 
         Map<String, Object> item2 = new HashMap<>();
-        item1.put("id", 2);
-        item1.put("name", "Item 2");
-        item1.put("description", "Second sample item");
+        item2.put("id", 2);
+        item2.put("name", "Item 2");
+        item2.put("description", "Second sample item");
 
         items.add(item1);
         items.add(item2);
     }
-
 
 
     @Override
