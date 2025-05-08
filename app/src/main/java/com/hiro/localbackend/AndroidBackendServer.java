@@ -55,7 +55,7 @@ public class AndroidBackendServer extends NanoHTTPD {
         String uri = session.getUri();
         Method method = session.getMethod();
 
-        Log.d(TAG,  "Request received: " + method + " " + uri);
+        Log.d(TAG, "Request received: " + method + " " + uri);
 
         // Handle CORS (Cross-Origin Resource Sharing)
         Map<String, String> headers = new HashMap<>();
@@ -73,19 +73,20 @@ public class AndroidBackendServer extends NanoHTTPD {
             // API Routes
             if (uri.equals("/api/items") && Method.GET.equals(method)) {
                 return getItems(headers);
-            } else {
+            } else if (uri.startsWith("/api/items/") && Method.GET.equals(method)) {
                 int id = Integer.parseInt(uri.substring("/api/items/".length()));
-
-                if (uri.startsWith("/api/items/") && Method.GET.equals(method)) {
-                    return getItem(id, headers);
-                } else if (uri.equals("/api/items") && Method.POST.equals(method)) {
-                    return createItem(session, headers);
-                } else if (uri.startsWith("/api/items/") && Method.PUT.equals(method)) {
-                    return updateItem(id, session, headers);
-                } else if (uri.startsWith("/api/items/") && Method.DELETE.equals(method)) {
-                    return deleteItem(id, headers);
-                }
+                return getItem(id, headers);
+            } else if (uri.equals("/api/items") && Method.POST.equals(method)) {
+                Log.d(TAG, "serve: POST METHOD");
+                return createItem(session, headers);
+            } else if (uri.startsWith("/api/items/") && Method.PUT.equals(method)) {
+                int id = Integer.parseInt(uri.substring("/api/items/".length()));
+                return updateItem(id, session, headers);
+            } else if (uri.startsWith("/api/items/") && Method.DELETE.equals(method)) {
+                int id = Integer.parseInt(uri.substring("/api/items/".length()));
+                return deleteItem(id, headers);
             }
+
 
             // Default response for unhandled routes
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
