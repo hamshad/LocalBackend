@@ -8,7 +8,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,34 +19,25 @@ public class AndroidBackendServer extends NanoHTTPD {
     private static final String TAG = "AndroidBackendServer";
     private final Context context;
 
-    // In-memory database for demonstration
-    private List<Map<String, Object>> items;
+    // LocalDatabase instance for data storage
+    private LocalDatabase localDatabase;
 
     public AndroidBackendServer(Context context, int port) {
         super(port);
         this.context = context;
+        this.localDatabase = new LocalDatabase(context);
 
         initializeData();
     }
 
     private void initializeData() {
-        // Initialize our "database"
-        items = new ArrayList<>();
-
-        Map<String, Object> item1 = new HashMap<>();
-        item1.put("id", 1);
-        item1.put("name", "Item 1");
-        item1.put("description", "First sample item");
-
-        Map<String, Object> item2 = new HashMap<>();
-        item2.put("id", 2);
-        item2.put("name", "Item 2");
-        item2.put("description", "Second sample item");
-
-        items.add(item1);
-        items.add(item2);
+        // Initialize our database with sample data if it's empty
+        List<Data> items = localDatabase.getData();
+        if (items.isEmpty()) {
+            localDatabase.addData("Item 1", "First sample item");
+            localDatabase.addData("Item 2", "Second sample item");
+        }
     }
-
 
     @Override
     public Response serve(IHTTPSession session) {
@@ -63,8 +53,7 @@ public class AndroidBackendServer extends NanoHTTPD {
         headers.put("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
         headers.put("Access-Control-Allow-Headers", "Content-Type");
 
-
-        // Handle OPTIONS requests (preflight CORS requestsc)
+        // Handle OPTIONS requests (preflight CORS requests)
         if (Method.OPTIONS.equals(method)) {
             return newFixedLengthResponse(Response.Status.OK, "application/json", "");
         }
@@ -87,7 +76,6 @@ public class AndroidBackendServer extends NanoHTTPD {
                 return deleteItem(id, headers);
             }
 
-
             // Default response for unhandled routes
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
                     "{\"error\":\"Not Found\"}");
@@ -102,14 +90,13 @@ public class AndroidBackendServer extends NanoHTTPD {
     // GET /api/items - Get all items
     private Response getItems(Map<String, String> headers) {
         try {
+            List<Data> items = localDatabase.getData();
             JSONArray jsonArray = new JSONArray();
-            for (Map<String, Object> item : items) {
-                JSONObject jsonObject = new JSONObject();
-                for (Map.Entry<String, Object> entry : item.entrySet()) {
-                    jsonObject.put(entry.getKey(), entry.getValue());
-                }
-                jsonArray.put(jsonObject);
+
+            for (Data item : items) {
+                jsonArray.put(new JSONObject(item.toJsonString()));
             }
+
             return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString());
         } catch (JSONException e) {
             return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
@@ -119,20 +106,14 @@ public class AndroidBackendServer extends NanoHTTPD {
 
     // GET /api/items/{id} - Get item by ID
     private Response getItem(int id, Map<String, String> headers) {
-        for (Map<String, Object> item : items) {
-            if ((int) item.get("id") == id) {
-                try {
-                    JSONObject jsonObject = new JSONObject();
-                    for (Map.Entry<String, Object> entry : item.entrySet()) {
-                        jsonObject.put(entry.getKey(), entry.getValue());
-                    }
-                    return newFixedLengthResponse(Response.Status.OK, "application/json", jsonObject.toString());
-                } catch (JSONException e) {
-                    return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
-                            "{\"error\":\"" + e.getMessage() + "\"}");
-                }
+        List<Data> items = localDatabase.getData();
+
+        for (Data item : items) {
+            if (item.id() == id) {
+                return newFixedLengthResponse(Response.Status.OK, "application/json", item.toJsonString());
             }
         }
+
         return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
                 "{\"error\":\"Item not found\"}");
     }
@@ -159,21 +140,11 @@ public class AndroidBackendServer extends NanoHTTPD {
                         "{\"error\":\"Name is required\"}");
             }
 
-            // Create new item
-            int newId = items.size() + 1;
-            Map<String, Object> newItem = new HashMap<>();
-            newItem.put("id", newId);
-            newItem.put("name", name);
-            newItem.put("description", description);
-            items.add(newItem);
+            // Create new item using LocalDatabase
+            Data newData = localDatabase.addData(name, description);
 
             // Return created item
-            JSONObject response = new JSONObject();
-            response.put("id", newId);
-            response.put("name", name);
-            response.put("description", description);
-
-            return newFixedLengthResponse(Response.Status.CREATED, "application/json", response.toString());
+            return newFixedLengthResponse(Response.Status.CREATED, "application/json", newData.toJsonString());
         } catch (IOException | JSONException | ResponseException e) {
             return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                     "{\"error\":\"" + e.getMessage() + "\"}");
@@ -184,9 +155,11 @@ public class AndroidBackendServer extends NanoHTTPD {
     private Response updateItem(int id, IHTTPSession session, Map<String, String> headers) {
         try {
             // Find the item
-            Map<String, Object> itemToUpdate = null;
-            for (Map<String, Object> item : items) {
-                if ((int) item.get("id") == id) {
+            List<Data> items = localDatabase.getData();
+            Data itemToUpdate = null;
+
+            for (Data item : items) {
+                if (item.id() == id) {
                     itemToUpdate = item;
                     break;
                 }
@@ -209,22 +182,17 @@ public class AndroidBackendServer extends NanoHTTPD {
 
             JSONObject jsonRequest = new JSONObject(body);
 
-            // Update the item
-            if (jsonRequest.has("name")) {
-                itemToUpdate.put("name", jsonRequest.getString("name"));
-            }
+            // Get values for update - use existing values as defaults
+            String name = jsonRequest.has("name") ? jsonRequest.getString("name") : itemToUpdate.name();
+            String description = jsonRequest.has("description") ?
+                    jsonRequest.getString("description") : itemToUpdate.description();
 
-            if (jsonRequest.has("description")) {
-                itemToUpdate.put("description", jsonRequest.getString("description"));
-            }
+            // Create updated data and update in database
+            Data updatedData = new Data(id, name, description);
+            localDatabase.updateData(updatedData);
 
             // Return updated item
-            JSONObject response = new JSONObject();
-            for (Map.Entry<String, Object> entry : itemToUpdate.entrySet()) {
-                response.put(entry.getKey(), entry.getValue());
-            }
-
-            return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString());
+            return newFixedLengthResponse(Response.Status.OK, "application/json", updatedData.toJsonString());
         } catch (IOException | JSONException | ResponseException e) {
             return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
                     "{\"error\":\"" + e.getMessage() + "\"}");
@@ -233,20 +201,20 @@ public class AndroidBackendServer extends NanoHTTPD {
 
     // DELETE /api/items/{id} - Delete item
     private Response deleteItem(int id, Map<String, String> headers) {
-        for (int i = 0; i < items.size(); i++) {
-            if ((int) items.get(i).get("id") == id) {
-                items.remove(i);
-                JSONObject response = new JSONObject();
-                try {
-                    response.put("message", "Item deleted successfully");
-                    return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString());
-                } catch (JSONException e) {
-                    return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
-                            "{\"error\":\"" + e.getMessage() + "\"}");
-                }
+        boolean deleted = localDatabase.deleteData(id);
+
+        if (deleted) {
+            JSONObject response = new JSONObject();
+            try {
+                response.put("message", "Item deleted successfully");
+                return newFixedLengthResponse(Response.Status.OK, "application/json", response.toString());
+            } catch (JSONException e) {
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json",
+                        "{\"error\":\"" + e.getMessage() + "\"}");
             }
+        } else {
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
+                    "{\"error\":\"Item not found\"}");
         }
-        return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json",
-                "{\"error\":\"Item not found\"}");
     }
 }
